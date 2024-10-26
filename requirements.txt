@@ -3,3 +3,4 @@ flask
 requests
 flask-cors
 ibm-cos-sdk
+botocore
