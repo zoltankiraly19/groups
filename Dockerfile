@@ -13,6 +13,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Másold az összes alkalmazásfájlt az image-be
 COPY . .
 
+# Flask app beállítása (ha szükséges)
+# ENV FLASK_APP=appassigne.py  
+
 # Indítsd el a Flask alkalmazást
 CMD ["python", "appassigne.py"]
 

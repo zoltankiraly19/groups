@@ -7,7 +7,9 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
 
-def load_group_data():
+
+def load_data_from_cos(bucket_name, key):
+    """Segédfüggvény adatok betöltéséhez az IBM COS-ból."""
     try:
         cos = ibm_boto3.client(
             's3',
@@ -16,35 +18,54 @@ def load_group_data():
             config=Config(signature_version='oauth'),
             endpoint_url='https://s3.us-south.cloud-object-storage.appdomain.cloud'
         )
-        
-        response = cos.get_object(
-            Bucket='servicenow',
-            Key='admin_assignment_groups.txt'
-        )
-        
-        data = json.loads(response['Body'].read().decode('utf-8'))
-        return {
-            "values": [group['sys_id'] for group in data],
-            "labels": [group['name'] for group in data]
-        }
-    except Exception as e:
-        print(f"Error loading data: {e}")
-        return {"values": [], "labels": []}
 
-DROPDOWN_OPTIONS = load_group_data()
+        response = cos.get_object(
+            Bucket=bucket_name,
+            Key=key
+        )
+
+        content = response['Body'].read().decode('utf-8')
+        return json.loads(content)  # JSON adat betöltése
+    except Exception as e:
+        print(f"Error loading {key} data: {e}")
+        return []
+
+
+# Dropdown adatok betöltése a felhőből
+assignment_groups_data = load_data_from_cos('servicenow', 'global_assignment_groups')
+priorities_data = load_data_from_cos('servicenow', 'global_priorities')
+
+# Adatok előkészítése a frontend dropdown listákhoz
+DROPDOWN_OPTIONS = {
+    "assignment_groups": {
+        "values": [group['sys_id'] for group in assignment_groups_data],
+        "labels": [group['name'] for group in assignment_groups_data]
+    },
+    "priorities": {
+        "values": [priority['value'] for priority in priorities_data],
+        "labels": [priority['label'] for priority in priorities_data]
+    }
+}
+
 
 @app.route('/dropdown', methods=['POST'])
 def submit_selected():
-    selected = request.json.get('selectedOption')
-    if selected in DROPDOWN_OPTIONS["values"]:
+    selected_group = request.json.get('selectedGroup')
+    selected_priority = request.json.get('selectedPriority')
+
+    group_valid = selected_group in DROPDOWN_OPTIONS["assignment_groups"]["values"]
+    priority_valid = selected_priority in DROPDOWN_OPTIONS["priorities"]["values"]
+
+    if group_valid and priority_valid:
         return jsonify({
             "success": True,
-            "message": f"Selected option: {selected}"
+            "message": f"Selected group: {selected_group}, Selected priority: {selected_priority}"
         }), 200
     return jsonify({
         "success": False,
-        "message": "Invalid option"
+        "message": "Invalid option(s)"
     }), 400
+
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
