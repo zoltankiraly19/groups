@@ -1,8 +1,8 @@
-import json
-import ibm_boto3
-from botocore.config import Config
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+import ibm_boto3
+from ibm_botocore.config import Config
+import json
 
 app = Flask(__name__)
 CORS(app)
@@ -16,65 +16,49 @@ cos = ibm_boto3.client(
     endpoint_url='https://s3.us-south.cloud-object-storage.appdomain.cloud'
 )
 
-def load_data_from_cos(bucket_name, key):
+def load_data_from_cos(bucket_name, file_key):
     """Adatok betöltése IBM COS-ból."""
     try:
-        response = cos.get_object(Bucket=bucket_name, Key=key)
+        response = cos.get_object(Bucket=bucket_name, Key=file_key)
         content = response['Body'].read().decode('utf-8')
         return json.loads(content)
     except Exception as e:
-        print(f"Error loading {key} data: {e}")
+        print(f"Error loading {file_key} data: {e}")
         return []
 
-# Adatok betöltése globális változókba
+# Adatok betöltése a COS-ból
 assignment_groups_data = load_data_from_cos('servicenow', 'global_assignment_groups')
-priorities_data = load_data_from_cos('servicenow', 'global_priorities')
 
-@app.route('/selections', methods=['GET'])
-def get_selection_options():
-    """Visszaadja az összes választható opciót."""
-    return jsonify({
-        "groups": assignment_groups_data,
-        "priorities": priorities_data
-    }), 200
+@app.route('/dropdown', methods=['POST'])
+def handle_dropdown():
+    """Dropdown opciók lekérdezése vagy kiválasztás feldolgozása."""
+    data = request.json
+    action = data.get('action', 'getOptions')
 
-@app.route('/selections', methods=['POST'])
-def submit_selection():
-    """Kiválasztott értékek feldolgozása és válasz küldése."""
-    try:
-        data = request.json
-        selected_group = data.get('selectedGroup')
-        selected_priority = data.get('selectedPriority')
+    # Ha az opciók lekérdezése a cél
+    if action == 'getOptions':
+        return jsonify({
+            "success": True,
+            "message": "Available options retrieved",
+            "labels": [group["name"] for group in assignment_groups_data],
+            "values": [group["sys_id"] for group in assignment_groups_data]
+        })
 
-        # Kiválasztott csoport megkeresése
-        selected_group_obj = next(
-            (group for group in assignment_groups_data if group['sys_id'] == selected_group),
-            None
-        )
+    # Ha egy konkrét opció kiválasztása történik
+    elif action == 'select':
+        selected_name = data.get('selectedOption')
+        selected_group = next((group for group in assignment_groups_data if group["name"] == selected_name), None)
 
-        # Kiválasztott prioritás megkeresése
-        selected_priority_obj = next(
-            (priority for priority in priorities_data if priority['value'] == selected_priority),
-            None
-        )
-
-        if selected_group_obj and selected_priority_obj:
+        if selected_group:
             return jsonify({
                 "success": True,
-                "selectedGroup": selected_group_obj,
-                "selectedPriority": selected_priority_obj
+                "message": f"Selected option ID: {selected_group['sys_id']} for {selected_name}"
             }), 200
         else:
             return jsonify({
                 "success": False,
-                "message": "Invalid selection"
+                "message": "Invalid option selected"
             }), 400
-
-    except Exception as e:
-        return jsonify({
-            "success": False,
-            "message": f"Error processing request: {str(e)}"
-        }), 400
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
