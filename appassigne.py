@@ -26,39 +26,29 @@ def load_data_from_cos(bucket_name, file_key):
         print(f"Error loading {file_key} data: {e}")
         return []
 
-# Adatok betöltése a COS-ból
+# Adatok betöltése a COS-ból és különválasztása
 assignment_groups_data = load_data_from_cos('servicenow', 'global_assignment_groups')
+DROPDOWN_OPTIONS = {
+    "labels": [group["name"] for group in assignment_groups_data],
+    "values": {group["name"]: group["sys_id"] for group in assignment_groups_data}
+}
 
 @app.route('/dropdown', methods=['POST'])
-def handle_dropdown():
-    """Dropdown opciók lekérdezése vagy kiválasztás feldolgozása."""
-    data = request.json
-    action = data.get('action', 'getOptions')
+def submit_selected():
+    """Felhasználói kiválasztás feldolgozása."""
+    selected_label = request.json.get('selectedOption')
+    selected_value = DROPDOWN_OPTIONS["values"].get(selected_label)
 
-    # Ha az opciók lekérdezése a cél
-    if action == 'getOptions':
+    if selected_value:
         return jsonify({
             "success": True,
-            "message": "Available options retrieved",
-            "labels": [group["name"] for group in assignment_groups_data],
-            "values": [group["sys_id"] for group in assignment_groups_data]
-        })
-
-    # Ha egy konkrét opció kiválasztása történik
-    elif action == 'select':
-        selected_name = data.get('selectedOption')
-        selected_group = next((group for group in assignment_groups_data if group["name"] == selected_name), None)
-
-        if selected_group:
-            return jsonify({
-                "success": True,
-                "message": f"Selected option ID: {selected_group['sys_id']} for {selected_name}"
-            }), 200
-        else:
-            return jsonify({
-                "success": False,
-                "message": "Invalid option selected"
-            }), 400
+            "message": f"Selected option ID: {selected_value} for {selected_label}"
+        }), 200
+    else:
+        return jsonify({
+            "success": False,
+            "message": "Invalid option"
+        }), 400
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
