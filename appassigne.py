@@ -28,37 +28,32 @@ def load_data_from_cos(bucket_name, file_key):
 
 # Adatok betöltése a COS-ból és különválasztása
 assignment_groups_data = load_data_from_cos('servicenow', 'global_assignment_groups')
-DROPDOWN_OPTIONS = {
-    "labels": [group["name"] for group in assignment_groups_data],
-    "values": {group["name"]: group["sys_id"] for group in assignment_groups_data}
-}
-
-# Priorities betöltése a COS-ból és különválasztása
 priorities_data = load_data_from_cos('servicenow', 'global_priorities')
-PRIORITIES_OPTIONS = {
-    "labels": [priority["label"] for priority in priorities_data],
-    "values": {priority["label"]: priority["value"] for priority in priorities_data}
+
+DROPDOWN_OPTIONS = {
+    "assignment_labels": {group["name"]: group["sys_id"] for group in assignment_groups_data},
+    "priority_values": {priority["label"]: priority["value"] for priority in priorities_data}
 }
 
 @app.route('/dropdown', methods=['POST'])
 def submit_selected():
     """Felhasználói kiválasztás feldolgozása."""
     selected_label = request.json.get('selectedOption')
-    selected_priority_label = request.json.get('selectedPriority')
-    
-    selected_value = DROPDOWN_OPTIONS["values"].get(selected_label)
-    selected_priority_value = PRIORITIES_OPTIONS["values"].get(selected_priority_label)
+    selected_priority = request.json.get('selectedPriority')
+    selected_group_id = DROPDOWN_OPTIONS["assignment_labels"].get(selected_label)
+    priority_value = DROPDOWN_OPTIONS["priority_values"].get(selected_priority)
 
-    if selected_value and selected_priority_value:
+    if selected_group_id and priority_value:
         return jsonify({
             "success": True,
-            "message": f"Selected option ID: {selected_value} for {selected_label}",
-            "priority": f"Selected priority value: {selected_priority_value} for {selected_priority_label}"
+            "message": f"Selected option ID: {selected_group_id} for {selected_label}",
+            "assignment_group_id": selected_group_id,
+            "priority_value": priority_value
         }), 200
     else:
         return jsonify({
             "success": False,
-            "message": "Invalid option or priority"
+            "message": "Invalid option selected"
         }), 400
 
 if __name__ == '__main__':
