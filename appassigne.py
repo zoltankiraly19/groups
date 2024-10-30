@@ -33,21 +33,32 @@ DROPDOWN_OPTIONS = {
     "values": {group["name"]: group["sys_id"] for group in assignment_groups_data}
 }
 
+# Priorities betöltése a COS-ból és különválasztása
+priorities_data = load_data_from_cos('servicenow', 'global_priorities')
+PRIORITIES_OPTIONS = {
+    "labels": [priority["label"] for priority in priorities_data],
+    "values": {priority["label"]: priority["value"] for priority in priorities_data}
+}
+
 @app.route('/dropdown', methods=['POST'])
 def submit_selected():
     """Felhasználói kiválasztás feldolgozása."""
     selected_label = request.json.get('selectedOption')
+    selected_priority_label = request.json.get('selectedPriority')
+    
     selected_value = DROPDOWN_OPTIONS["values"].get(selected_label)
+    selected_priority_value = PRIORITIES_OPTIONS["values"].get(selected_priority_label)
 
-    if selected_value:
+    if selected_value and selected_priority_value:
         return jsonify({
             "success": True,
-            "message": f"Selected option ID: {selected_value} for {selected_label}"
+            "message": f"Selected option ID: {selected_value} for {selected_label}",
+            "priority": f"Selected priority value: {selected_priority_value} for {selected_priority_label}"
         }), 200
     else:
         return jsonify({
             "success": False,
-            "message": "Invalid option"
+            "message": "Invalid option or priority"
         }), 400
 
 if __name__ == '__main__':
