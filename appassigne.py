@@ -31,24 +31,29 @@ assignment_groups_data = load_data_from_cos('servicenow', 'global_assignment_gro
 priorities_data = load_data_from_cos('servicenow', 'global_priorities')
 
 DROPDOWN_OPTIONS = {
-    "assignment_labels": {group["name"]: group["sys_id"] for group in assignment_groups_data},
+    "assignment_labels": [group["name"] for group in assignment_groups_data],
+    "assignment_values": {group["name"]: group["sys_id"] for group in assignment_groups_data},
+    "priority_labels": [priority["label"] for priority in priorities_data],
     "priority_values": {priority["label"]: priority["value"] for priority in priorities_data}
 }
 
 @app.route('/dropdown', methods=['POST'])
 def submit_selected():
     """Felhasználói kiválasztás feldolgozása."""
-    selected_label = request.json.get('selectedOption')
+    selected_assignment = request.json.get('selectedOption')
     selected_priority = request.json.get('selectedPriority')
-    selected_group_id = DROPDOWN_OPTIONS["assignment_labels"].get(selected_label)
+    short_description = request.json.get('shortDescription', '')
+
+    assignment_id = DROPDOWN_OPTIONS["assignment_values"].get(selected_assignment)
     priority_value = DROPDOWN_OPTIONS["priority_values"].get(selected_priority)
 
-    if selected_group_id and priority_value:
+    if assignment_id and priority_value:
         return jsonify({
             "success": True,
-            "message": f"Selected option ID: {selected_group_id} for {selected_label}",
-            "assignment_group_id": selected_group_id,
-            "priority_value": priority_value
+            "message": f"Selected option ID: {assignment_id} for {selected_assignment} with priority {priority_value} and description provided.",
+            "assignment_group_id": assignment_id,
+            "priority_value": priority_value,
+            "short_description": short_description
         }), 200
     else:
         return jsonify({
