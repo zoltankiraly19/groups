@@ -17,34 +17,48 @@ cos = ibm_boto3.client(
     endpoint_url='https://s3.us-south.cloud-object-storage.appdomain.cloud'
 )
 
+bucket_name = 'servicenow'
+
 def load_data_from_cos(bucket_name, file_key):
-    """Adatok betöltése IBM COS-ból."""
+    """Betölti az adatokat a COS-ból a megadott fájlnév alapján."""
     try:
         response = cos.get_object(Bucket=bucket_name, Key=file_key)
         content = response['Body'].read().decode('utf-8')
-        return json.loads(content)
+        return content
     except Exception as e:
-        print(f"Error loading {file_key} data: {e}")
-        return []
+        print(f"Error loading {file_key}: {e}")
+        return None
 
-# Adatok betöltése a COS-ból és különválasztása
-assignment_groups_data = load_data_from_cos('servicenow', 'global_assignment_groups')
+# Betöltjük a globális assignment groupokat és prioritásokat
+assignment_groups_data = load_data_from_cos(bucket_name, 'global_assignment_groups')
 DROPDOWN_OPTIONS = {
-    "labels": [group["name"] for group in assignment_groups_data],
-    "values": {group["name"]: group["sys_id"] for group in assignment_groups_data}
+    "labels": [group["name"] for group in json.loads(assignment_groups_data)],
+    "values": {group["name"]: group["sys_id"] for group in json.loads(assignment_groups_data)}
 }
 
-@app.route('/dropdown', methods=['POST'])
-def submit_selected():
-    """Felhasználói kiválasztás és jegy létrehozása egyetlen hívással."""
+@app.route('/create_ticket', methods=['POST'])
+def create_ticket():
+    """Jegy létrehozása felhasználói kiválasztás alapján."""
     data = request.json
+    user_name = data.get('user_name')
     selected_label = data.get('selectedOption')
-    selected_value = DROPDOWN_OPTIONS["values"].get(selected_label)
-    priority = data.get('priority')
-    short_description = data.get('short_description')
-    user_token = data.get('user_token')  # A felhasználói token
+    priority = data.get('selectedPriority')
+    short_description = data.get('shortDescription')
 
-    if not selected_value:
+    # Betöltjük a felhasználó tokenjét és sys_id-jét a COS-ból
+    user_token = load_data_from_cos(bucket_name, f"{user_name}_user_token")
+    user_sys_id = load_data_from_cos(bucket_name, f"{user_name}_user_sys_id")
+
+    if not user_token or not user_sys_id:
+        return jsonify({
+            "success": False,
+            "message": "Token vagy sys_id nem található a megadott felhasználónév alapján."
+        }), 400
+
+    # Ellenőrizzük, hogy az assignment group kiválasztása érvényes-e
+    assignment_group_id = DROPDOWN_OPTIONS["values"].get(selected_label)
+    
+    if not assignment_group_id:
         return jsonify({
             "success": False,
             "message": "Invalid assignment group selection"
@@ -53,8 +67,9 @@ def submit_selected():
     # Jegy adatok ServiceNow-ba történő küldéshez
     ticket_data = {
         "short_description": short_description,
-        "assignment_group": selected_value,
-        "priority": priority
+        "assignment_group": assignment_group_id,
+        "priority": priority,
+        "caller_id": user_sys_id
     }
 
     # ServiceNow API hívás a jegy létrehozásához
@@ -72,8 +87,7 @@ def submit_selected():
         return jsonify({
             "success": True,
             "message": f"Ticket created successfully with ID: {response.json().get('result', {}).get('number')}",
-            "selected_option": selected_label,
-            "assignment_group_id": selected_value
+            "ticket_number": response.json().get('result', {}).get('number')
         }), 201
     else:
         return jsonify({
