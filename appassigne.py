@@ -2,6 +2,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import ibm_boto3
 from ibm_botocore.config import Config
+import requests
 import json
 
 app = Flask(__name__)
@@ -28,38 +29,58 @@ def load_data_from_cos(bucket_name, file_key):
 
 # Adatok betöltése a COS-ból és különválasztása
 assignment_groups_data = load_data_from_cos('servicenow', 'global_assignment_groups')
-priorities_data = load_data_from_cos('servicenow', 'global_priorities')
-
 DROPDOWN_OPTIONS = {
-    "assignment_labels": [group["name"] for group in assignment_groups_data],
-    "assignment_values": {group["name"]: group["sys_id"] for group in assignment_groups_data},
-    "priority_labels": [priority["label"] for priority in priorities_data],
-    "priority_values": {priority["label"]: priority["value"] for priority in priorities_data}
+    "labels": [group["name"] for group in assignment_groups_data],
+    "values": {group["name"]: group["sys_id"] for group in assignment_groups_data}
 }
 
 @app.route('/dropdown', methods=['POST'])
 def submit_selected():
-    """Felhasználói kiválasztás feldolgozása."""
-    selected_assignment = request.json.get('selectedOption')
-    selected_priority = request.json.get('selectedPriority')
-    short_description = request.json.get('shortDescription', '')
+    """Felhasználói kiválasztás és jegy létrehozása egyetlen hívással."""
+    data = request.json
+    selected_label = data.get('selectedOption')
+    selected_value = DROPDOWN_OPTIONS["values"].get(selected_label)
+    priority = data.get('priority')
+    short_description = data.get('short_description')
+    user_token = data.get('user_token')  # A felhasználói token
 
-    assignment_id = DROPDOWN_OPTIONS["assignment_values"].get(selected_assignment)
-    priority_value = DROPDOWN_OPTIONS["priority_values"].get(selected_priority)
+    if not selected_value:
+        return jsonify({
+            "success": False,
+            "message": "Invalid assignment group selection"
+        }), 400
 
-    if assignment_id and priority_value:
+    # Jegy adatok ServiceNow-ba történő küldéshez
+    ticket_data = {
+        "short_description": short_description,
+        "assignment_group": selected_value,
+        "priority": priority
+    }
+
+    # ServiceNow API hívás a jegy létrehozásához
+    headers = {
+        'Authorization': f'Bearer {user_token}',
+        'Content-Type': 'application/json'
+    }
+    response = requests.post(
+        'https://dev227667.service-now.com/api/now/table/incident',
+        headers=headers,
+        json=ticket_data
+    )
+
+    if response.status_code == 201:
         return jsonify({
             "success": True,
-            "message": f"Selected option ID: {assignment_id} for {selected_assignment} with priority {priority_value} and description provided.",
-            "assignment_group_id": assignment_id,
-            "priority_value": priority_value,
-            "short_description": short_description
-        }), 200
+            "message": f"Ticket created successfully with ID: {response.json().get('result', {}).get('number')}",
+            "selected_option": selected_label,
+            "assignment_group_id": selected_value
+        }), 201
     else:
         return jsonify({
             "success": False,
-            "message": "Invalid option selected"
-        }), 400
+            "message": "Failed to create ticket",
+            "details": response.text
+        }), response.status_code
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
